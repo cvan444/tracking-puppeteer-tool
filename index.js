@@ -1,83 +1,89 @@
-const puppeteer = require('puppeteer-extra') 
+const puppeteer = require('puppeteer-extra');
+const pluginStealth = require('puppeteer-extra-plugin-stealth'); 
+const { executablePath } = require('puppeteer');
+const clipboardy = require('clipboardy');
+const fs = require('fs');
+puppeteer.use(pluginStealth());
 
-// Add stealth plugin and use defaults 
-const pluginStealth = require('puppeteer-extra-plugin-stealth') 
-const {executablePath} = require('puppeteer');
+//main puppeteer function, runs nums through site 
+async function getTrackingInformation(trackingNumbers) {
+  const browser = await puppeteer.launch({ headless: false, executablePath: executablePath() });
+  const page = await browser.newPage();
 
-puppeteer.use(pluginStealth())
-
-
-puppeteer.launch({ headless:false, executablePath: executablePath() }).then(async browser => {
-    const page = await browser.newPage()
-
-      // Set the viewport size to 3/4 of the screen size
-  const {width, height} = await page.evaluate(() => ({
+  // Set the viewport size to 3/4 of the screen size
+  const { width, height } = await page.evaluate(() => ({
     width: window.screen.availWidth,
     height: window.screen.availHeight,
   }));
-  await page.setViewport({width: width * 0.75, height: height * 0.75});
+  await page.setViewport({ width: width * 0.75, height: height * 0.75 });
+
+  await page.goto(`https://t.17track.net/en#nums=${trackingNumbers}`);
+  await page.waitForTimeout(500);
+//loops through popup sequence
+  for (let i = 1; i <= 4; i++) {
+    const popupButtonSelector = `body > div.introjs-tooltipReferenceLayer > div > div.introjs-tooltipbuttons > a.introjs-button.introjs-nextbutton`;
+    await page.waitForSelector(popupButtonSelector);
+    await page.click(popupButtonSelector);
+    await page.waitForTimeout(500);
+  }
+
+  await page.waitForTimeout(3000);
+
+  const clickResultsButtonSelector = '#cl-summary';
+  await page.waitForSelector(clickResultsButtonSelector);
+  await page.click(clickResultsButtonSelector);
+
+  await page.waitForTimeout(3000);
+//copies clipboard data
+  const clipboardTextData = await clipboardy.read();
+  console.log("Text from clipboard:", clipboardTextData);
+
+  await browser.close();
+
+  return clipboardTextData;
+}
 
 
-    await page.goto("https://t.17track.net/en#nums=92748903031571543475102857")
+//creates output file
+function writeTrackingNumberFile(data, batchIndex) {
+  const filename = `Output_${batchIndex}.txt`;
+  fs.appendFileSync(filename, data); // Append data to the file instead of overwriting it
+  console.log(`Saved batch ${batchIndex} to ${filename}`);
+}
 
-    await new Promise(r => setTimeout(r, 1000));
+//iterates throguh 40 tracking 
+async function processBatch(global_data, startIndex, endIndex, batchIndex) {
+  let trackingNumbers = global_data.slice(startIndex, endIndex).join('');
+  console.log("Start Index:", startIndex);
+  console.log("End Index:", endIndex);
+  console.log("Tracking Numbers:", trackingNumbers);
 
-    //click popup1
-    const popup1ButtonSelector = 'body > div.introjs-tooltipReferenceLayer > div > div.introjs-tooltipbuttons > a.introjs-button.introjs-nextbutton';
-    await page.waitForSelector(popup1ButtonSelector);
-    await page.click(popup1ButtonSelector);
-    await new Promise(r => setTimeout(r, 1000));
-    //click popup2
-    const popup2ButtonSelector = 'body > div.introjs-tooltipReferenceLayer > div > div.introjs-tooltipbuttons > a.introjs-button.introjs-nextbutton';
-    await page.waitForSelector(popup2ButtonSelector);
-    await page.click(popup2ButtonSelector);
-    await new Promise(r => setTimeout(r, 1000));
-    //click popup3
-    const popup3ButtonSelector = 'body > div.introjs-tooltipReferenceLayer > div > div.introjs-tooltipbuttons > a.introjs-button.introjs-nextbutton';
-    await page.waitForSelector(popup3ButtonSelector);
-    await page.click(popup3ButtonSelector);
-    await new Promise(r => setTimeout(r, 1000));
-    //click popup4
-    const popup4ButtonSelector = 'body > div.introjs-tooltipReferenceLayer > div > div.introjs-tooltipbuttons > a.introjs-button.introjs-nextbutton';
-    await page.waitForSelector(popup4ButtonSelector);
-    await page.click(popup4ButtonSelector);
-    await new Promise(r => setTimeout(r, 1000));
+  const trackingData = await getTrackingInformation(trackingNumbers);
 
+  writeTrackingNumberFile(trackingData, batchIndex);//makes individual files
+}
 
-    //Click clear tracking  button
-    const clickClearTrackingButtonSelector = '#jsTrackBox > div:nth-child(2) > div.yqi-new-tools-small.clearfix.inputBox-operation-on > button:nth-child(1)';
-    await page.waitForSelector(clickClearTrackingButtonSelector);
-    await page.click(clickClearTrackingButtonSelector);
-    await new Promise(r => setTimeout(r, 1000));
+//reads batch file 
+async function main() {
+  let global_data = fs.readFileSync("batchTest.txt", "utf-8").split("\n");
+  let totalBlocks = Math.ceil(global_data.length / 40);
 
-    //select tracking input field
+  for (let counterblock = 1; counterblock <= totalBlocks; counterblock++) {
+    let startIndex = (counterblock - 1) * 40;
+    let endIndex = counterblock * 40;
+    await processBatch(global_data, startIndex, endIndex, counterblock);
+  }
 
-    const inputTrackingField = '#jsTrackBox > div:nth-child(1) > div > div.CodeMirror-scroll > div.CodeMirror-sizer > div > div > div > div.CodeMirror-code > div > pre';
-    await page.waitForSelector(inputTrackingField);
-    const inputField = await page.$(inputTrackingField);
-    await new Promise(r => setTimeout(r, 1000));
+  //make da big file 
+  let combinedData = '';
+  for (let counterblock = 1; counterblock <= totalBlocks; counterblock++) {
+    const filename = `Output_${counterblock}.txt`;
+    const data = fs.readFileSync(filename, 'utf-8');
+    combinedData += data + '\n';
+  }
 
+  writeTrackingNumberFile(combinedData, 'Main');
+}
 
-    //Paste the 40 tracking numbers
-    await inputField.type('92748903031571543475102857');
-
-    //Click track (submit) button
-    const clickTrackButtonSelector = '#yqiSmallTrackBtn';
-    await page.waitForSelector(clickTrackButtonSelector);
-    await page.click(clickTrackButtonSelector);
-    await new Promise(r => setTimeout(r, 1000));
-
-
-    //Click results button
-    const clickResultsButtonSelector = '#cl-summary';
-    await page.waitForSelector(clickResultsButtonSelector);
-    await page.click(clickResultsButtonSelector);
-    await new Promise(r => setTimeout(r, 1000));
-
-    // Paste results into spreadsheet and grab the next 40 tracking #s and repeat this process
-
-
-
-
-})
-
+//catch errors 
+main().catch(err => console.error(err));
